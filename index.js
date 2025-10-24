@@ -1,114 +1,66 @@
-// Servidor simple de registro e inicio de sesión
-// No está relacionado con ningún almacén; es un ejemplo genérico y didáctico.
+// index.js - servidor mínimo de registro y login
 
-// Importaciones
-const express = require('express');
-const bodyParser = require('body-parser');
-const bcrypt = require('bcrypt');
-const fs = require('fs');
-const path = require('path');
-
-// Configuración
+const express = require('express'); // web
+const bcrypt = require('bcrypt');   // hash contraseñas
+const fs = require('fs');           // leer/escribir archivo
+const path = require('path');       // rutas
 const app = express();
 const PORT = process.env.PORT || 3000;
 const USERS_FILE = path.join(__dirname, 'users.json');
-const SALT_ROUNDS = 10;
+const SALT = 10;
 
-app.use(bodyParser.json()); // permite recibir JSON en el body
+app.use(express.json()); // parse JSON
+app.use(express.static(path.join(__dirname, 'public'))); // servir frontend
 
-// Lee users.json; si no existe, lo crea con estructura vacía
-function readUsersFile() {
+// lee users.json (crea si no existe)
+function readUsers() {
   try {
-    if (!fs.existsSync(USERS_FILE)) {
-      fs.writeFileSync(USERS_FILE, JSON.stringify({ users: [] }, null, 2));
-    }
-    const raw = fs.readFileSync(USERS_FILE);
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error('Error leyendo users.json:', err);
+    if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, JSON.stringify({ users: [] }, null, 2));
+    return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+  } catch {
     return { users: [] };
   }
 }
 
-// Guarda el objeto en users.json
-function writeUsersFile(data) {
-  try {
-    fs.writeFileSync(USERS_FILE, JSON.stringify(data, null, 2));
-  } catch (err) {
-    console.error('Error escribiendo users.json:', err);
-  }
+// escribe users.json
+function writeUsers(data) {
+  try { fs.writeFileSync(USERS_FILE, JSON.stringify(data, null, 2), 'utf8'); } catch {}
 }
 
-// Ruta: registro
-// Recibe { username, password }
+// REGISTRAR
 app.post('/register', async (req, res) => {
-  console.log('POST /register -> body:', req.body);
-  try {
-    const { username, password } = req.body;
+  console.log('POST /register', req.body); // log corto
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ success: false, message: 'Usuario y contraseña requeridos.' });
 
-    // Validación mínima
-    if (!username || !password) {
-      return res.status(400).json({ success: false, message: 'Usuario y contraseña requeridos.' });
-    }
+  const db = readUsers();
+  if (db.users.find(u => u.username === username)) return res.status(409).json({ success: false, message: 'El usuario ya existe.' });
 
-    const db = readUsersFile();
-    const existing = db.users.find(u => u.username === username);
-    if (existing) {
-      return res.status(409).json({ success: false, message: 'El usuario ya existe.' });
-    }
-
-    // Hashear contraseña
-    const hashed = await bcrypt.hash(password, SALT_ROUNDS);
-
-    const newUser = {
-      id: Date.now(),
-      username,
-      password: hashed
-    };
-
-    db.users.push(newUser);
-    writeUsersFile(db);
-
-    return res.status(201).json({ success: true, message: 'Registro exitoso.' });
-  } catch (err) {
-    console.error('Error en /register:', err);
-    return res.status(500).json({ success: false, message: 'Error del servidor.' });
-  }
+  const hash = await bcrypt.hash(password, SALT);
+  db.users.push({ id: Date.now(), username, password: hash });
+  writeUsers(db);
+  return res.status(201).json({ success: true, message: 'Registro exitoso.' });
 });
 
-// Ruta: login
-// Recibe { username, password }
+// LOGIN
 app.post('/login', async (req, res) => {
-  try {
-    const { username, password } = req.body;
+  console.log('POST /login', req.body);
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ success: false, message: 'Usuario y contraseña requeridos.' });
 
-    if (!username || !password) {
-      return res.status(400).json({ success: false, message: 'Usuario y contraseña requeridos.' });
-    }
+  const db = readUsers();
+  const user = db.users.find(u => u.username === username);
+  if (!user) return res.status(401).json({ success: false, message: 'Error en la autenticación.' });
 
-    const db = readUsersFile();
-    const user = db.users.find(u => u.username === username);
-    if (!user) {
-      return res.status(401).json({ success: false, message: 'Error en la autenticación.' });
-    }
+  const ok = await bcrypt.compare(password, user.password);
+  if (!ok) return res.status(401).json({ success: false, message: 'Error en la autenticación.' });
 
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) {
-      return res.status(401).json({ success: false, message: 'Error en la autenticación.' });
-    }
-
-    // Autenticación correcta
-    return res.status(200).json({ success: true, message: 'Autenticación satisfactoria.' });
-  } catch (err) {
-    console.error('Error en /login:', err);
-    return res.status(500).json({ success: false, message: 'Error del servidor.' });
-  }
+  return res.status(200).json({ success: true, message: 'Autenticación satisfactoria.' });
 });
 
-// Ruta raíz
-app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
-
-// Iniciar servidor
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+// raíz -> servir index.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+app.listen(PORT, () => console.log(`Servidor en http://localhost:${PORT}`));
