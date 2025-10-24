@@ -42,7 +42,6 @@ function writeUsersFile(data) {
 // Ruta: registro
 // Recibe { username, password }
 app.post('/register', async (req, res) => {
-  console.log('POST /register -> body:', req.body);
   try {
     const { username, password } = req.body;
 
@@ -106,7 +105,9 @@ app.post('/login', async (req, res) => {
 });
 
 // Ruta raíz
-app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
+app.get('/', (req, res) => {
+  res.send('Servicio de autenticación activo. Usa /register y /login.');
+});
 
 // Iniciar servidor
 app.listen(PORT, () => {
